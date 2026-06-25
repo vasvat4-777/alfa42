@@ -1,0 +1,287 @@
+
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+        <title>VO7SOT 3D Letters & Fireworks</title>
+        <style>
+            body {
+                margin: 0;
+                overflow: hidden;
+                background-color: #000;
+                font-family: sans-serif;
+                user-select: none;
+                -webkit-user-select: none;
+            }
+            canvas {
+                display: block;
+            }
+            #ui {
+                position: absolute;
+                bottom: 20px;
+                width: 100%;
+                text-align: center;
+                color: rgba(255, 255, 255, 0.7);
+                font-size: 14px;
+                pointer-events: none;
+                letter-spacing: 1px;
+                text-transform: uppercase;
+            }
+            #loading {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                color: #ffd700;
+                font-size: 20px;
+                font-weight: bold;
+                pointer-events: none;
+                transition: opacity 0.5s;
+            }
+        </style>
+        <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"><\/script>
+        <script type="importmap">
+          {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+          }
+        <\/script>
+    </head>
+    <body>
+        <div id="loading">Идет загрузка 3D-шрифта...</div>
+        <div id="ui">Крути сцену • Кликай по буквам для салюта</div>
+
+        <script type="module">
+            import * as THREE from 'three';
+            import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+            import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+            import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+
+            // --- 1. СЦЕНА И КАМЕРА ---
+            const scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.005);
+
+            const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 35;
+
+            const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // --- 2. СВЕТ ДЛЯ ЗОЛОТА ---
+            const ambientLight = new THREE.AmbientLight(0x444444);
+            scene.add(ambientLight);
+
+            const dirLight1 = new THREE.DirectionalLight(0xffffff, 3); 
+            dirLight1.position.set(20, 20, 20);
+            scene.add(dirLight1);
+
+            const dirLight2 = new THREE.DirectionalLight(0xffaa44, 2); 
+            dirLight2.position.set(-20, -20, 10);
+            scene.add(dirLight2);
+
+            // --- 3. ГЕНЕРАЦИЯ ТЕКСТУРЫ ИСКРЫ ---
+            function createSparkTexture() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 16; canvas.height = 16;
+                const ctx = canvas.getContext('2d');
+                const grad = ctx.createRadialGradient(8, 8, 0, 8, 8, 8);
+                grad.addColorStop(0, 'rgba(255,255,255,1)');
+                grad.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.fillStyle = grad; ctx.fillRect(0, 0, 16, 16);
+                return new THREE.CanvasTexture(canvas);
+            }
+            const sparkTexture = createSparkTexture();
+
+            // --- 4. ЗВЕЗДНЫЙ ФОН ---
+            const starsCount = 2000;
+            const starsGeometry = new THREE.BufferGeometry();
+            const starsPositions = new Float32Array(starsCount * 3);
+            for(let i = 0; i < starsCount * 3; i += 3) {
+                starsPositions[i] = (Math.random() - 0.5) * 200;
+                starsPositions[i+1] = (Math.random() - 0.5) * 200;
+                starsPositions[i+2] = (Math.random() - 0.5) * 400;
+            }
+            starsGeometry.setAttribute('position', new THREE.BufferAttribute(starsPositions, 3));
+            const starsMaterial = new THREE.PointsMaterial({
+                color: 0xffffff, size: 0.6, map: sparkTexture,
+                transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+            });
+            const starField = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(starField);
+
+            // --- 5. ОБЪЕМНЫЕ БУКВЫ VO7SOT ---
+            let logoMesh;
+            const loader = new FontLoader();
+            
+            // Загружаем шрифт из интернета
+            loader.load('https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json', function (font) {
+                const textGeometry = new TextGeometry('VO7SOT', {
+                    font: font,
+                    size: 7,
+                    height: 2.5, // Толщина букв
+                    curveSegments: 12,
+                    bevelEnabled: true,
+                    bevelThickness: 0.3,
+                    bevelSize: 0.2,
+                    bevelOffset: 0,
+                    bevelSegments: 5
+                });
+                textGeometry.center(); // Центрируем
+
+                // Настройка золота
+                const goldMaterial = new THREE.MeshStandardMaterial({
+                    color: 0xffd700,      
+                    metalness: 0.9,      
+                    roughness: 0.2,      
+                });
+
+                logoMesh = new THREE.Mesh(textGeometry, goldMaterial);
+                scene.add(logoMesh);
+
+                document.getElementById('loading').style.opacity = 0; // Прячем загрузку
+            });
+
+            // --- 6. ЛОГИКА САЛЮТОВ ---
+            const activeFireworks = [];
+
+            function createFirework(position) {
+                const particleCount = 150;
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(particleCount * 3);
+                const velocities = new Float32Array(particleCount * 3);
+                const colors = new Float32Array(particleCount * 3);
+
+                // Случайный цвет взрыва (сочные цвета)
+                const baseColor = new THREE.Color().setHSL(Math.random(), 1.0, 0.6);
+
+                for (let i = 0; i < particleCount * 3; i += 3) {
+                    // Стартуем из точки клика
+                    positions[i] = position.x;
+                    positions[i + 1] = position.y;
+                    positions[i + 2] = position.z;
+
+                    // Вектор разлета (сфера)
+                    const u = Math.random();
+                    const v = Math.random();
+                    const theta = u * 2.0 * Math.PI;
+                    const phi = Math.acos(2.0 * v - 1.0);
+                    const speed = Math.random() * 15 + 5; 
+
+                    velocities[i] = Math.sin(phi) * Math.cos(theta) * speed;
+                    velocities[i + 1] = Math.sin(phi) * Math.sin(theta) * speed;
+                    velocities[i + 2] = Math.cos(phi) * speed;
+
+                    // Немного разбавляем цвета искр
+                    const sparkColor = baseColor.clone().offsetHSL(0, 0, (Math.random() - 0.5) * 0.2);
+                    colors[i] = sparkColor.r;
+                    colors[i + 1] = sparkColor.g;
+                    colors[i + 2] = sparkColor.b;
+                }
+
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+                const material = new THREE.PointsMaterial({
+                    size: 0.8, map: sparkTexture,
+                    transparent: true, blending: THREE.AdditiveBlending,
+                    vertexColors: true, depthWrite: false
+                });
+
+                const firework = new THREE.Points(geometry, material);
+                firework.userData = { life: 1.5 }; // Живет 1.5 секунды
+                scene.add(firework);
+                activeFireworks.push(firework);
+            }
+
+            // --- 7. КЛИКИ ПО БУКВАМ ---
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+
+            function checkIntersection(clientX, clientY) {
+                mouse.x = (clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+                if (logoMesh) {
+                    const intersects = raycaster.intersectObject(logoMesh);
+                    if (intersects.length > 0) {
+                        createFirework(intersects[0].point); // Салют из точки попадания
+                    }
+                }
+            }
+
+            // Обработка мыши
+            window.addEventListener('pointerdown', (e) => {
+                if (e.isPrimary) checkIntersection(e.clientX, e.clientY);
+            });
+
+            // --- 8. АНИМАЦИЯ ---
+            const clock = new THREE.Clock();
+
+            function animate() {
+                requestAnimationFrame(animate);
+                const delta = clock.getDelta();
+                controls.update();
+
+                // Движение звезд
+                const starPos = starField.geometry.attributes.position.array;
+                for (let i = 2; i < starPos.length; i += 3) {
+                    starPos[i] += 40 * delta; 
+                    if (starPos[i] > 40) starPos[i] = -350;
+                }
+                starField.geometry.attributes.position.needsUpdate = true;
+
+                // Легкое покачивание букв
+                if (logoMesh && controls.state === -1) {
+                    logoMesh.rotation.y = Math.sin(clock.getElapsedTime() * 0.5) * 0.15;
+                    logoMesh.rotation.x = Math.cos(clock.getElapsedTime() * 0.3) * 0.05;
+                }
+
+                // Обновление салютов
+                for (let i = activeFireworks.length - 1; i >= 0; i--) {
+                    const fw = activeFireworks[i];
+                    fw.userData.life -= delta;
+
+                    if (fw.userData.life <= 0) {
+                        scene.remove(fw);
+                        fw.geometry.dispose();
+                        fw.material.dispose();
+                        activeFireworks.splice(i, 1);
+                        continue;
+                    }
+
+                    const positions = fw.geometry.attributes.position.array;
+                    const velocities = fw.geometry.attributes.velocity.array;
+
+                    for (let j = 0; j < positions.length; j++) {
+                        positions[j] += velocities[j] * delta;
+                        velocities[j] *= 0.95; // Сопротивление воздуха (искры тормозят)
+                    }
+                    fw.geometry.attributes.position.needsUpdate = true;
+                    fw.material.opacity = fw.userData.life / 1.5; // Затухание
+                }
+
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            // Ресайз
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        <\/script>
+    </body>
+    </html>
+  `,className:"w-full h-full border-none block",title:"VO7SOT 3D Golden Logo Space",scrolling:"no",id:"threejs-golden-logo-iframe"})]})}function Eh({service:v,onClose:z,onOpenBooking:D}){var ce;const[d,M]=I.useState("details"),[R,Q]=I.useState(v.gallery[0]||v.bgImage),[V,T]=I.useState("sunset"),[p,Z]=I.useState("Carrara Marble"),[U,ut]=I.useState("orbit"),[$,Tt]=I.useState(180),[ot,At]=I.useState("textured"),[Nt,Jt]=I.useState(45),[xt,X]=I.useState("#DFB15B"),H=I.useRef(!1),yt=I.useRef(0),k=Y=>{H.current=!0,yt.current=Y.clientX},_t=Y=>{if(!H.current)return;const Vt=Y.clientX-yt.current;yt.current=Y.clientX,v.demo.type==="tour-360"?Tt(se=>(se+Vt*.5+360)%360):v.demo.type==="model-rotate"&&Jt(se=>(se+Vt*.8+360)%360)},qt=()=>{H.current=!1};I.useEffect(()=>{if(v.demo.type==="model-rotate"||v.demo.type==="tour-360"){const Y=setInterval(()=>{H.current||(v.demo.type==="model-rotate"?Jt(Vt=>(Vt+.4)%360):Tt(Vt=>(Vt+.1)%360))},30);return()=>clearInterval(Y)}},[v.demo.type]);const ie=[{name:"Carrara Marble",info:"Премиальный белый итальянский мрамор с серыми прожилками. Идеально полированная поверхность.",colorClass:"bg-slate-100"},{name:"Brushed Brass",info:"Шлифованная латунь с тёплым металлическим отливом для фурнитуры и светильников.",colorClass:"bg-amber-100"},{name:"Walnut Wood",info:"Шлифованный американский орех с глубокой текстурой древесных волокон.",colorClass:"bg-amber-950"},{name:"Deep Green Velvet",info:"Мягкий бархат изумрудного оттенка для мебели элитного класса.",colorClass:"bg-emerald-900"}];return c.jsx("div",{className:"fixed inset-0 z-50 overflow-y-auto bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 md:p-10 select-none animate-fade-in",id:`modal-service-${v.id}`,children:c.jsxs("div",{className:"bg-[#0b0b0b] border border-[#DFB15B]/30 w-full max-w-6xl rounded-none relative overflow-hidden flex flex-col lg:flex-row shadow-[0_0_80px_rgba(223,177,91,0.15)]",children:[c.jsx("div",{className:"absolute top-0 left-0 w-32 h-[1px] bg-gradient-to-r from-transparent via-[#DFB15B]/50 to-transparent animate-pulse"}),c.jsx("div",{className:"absolute top-0 right-0 w-32 h-[1px] bg-gradient-to-r from-transparent via-[#DFB15B]/50 to-transparent animate-pulse"}),c.jsx("button",{onClick:z,className:"absolute top-4 right-4 z-50 text-gray-400 hover:text-[#DFB15B] transition-colors p-2 bg-black/60 border border-gray-800 hover:border-[#DFB15B]",id:"btn-close-modal","aria-label":"Close modal",children:c.jsx(G0,{className:"w-5 h-5"})}),c.jsxs("div",{className:"w-full lg:w-[55%] bg-[#060606] p-6 lg:p-8 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-[#DFB15B]/20 min-h-[400px]",children:[c.jsxs("div",{children:[c.jsxs("div",{className:"flex items-center gap-2 mb-6 text-xs tracking-widest text-[#DFB15B]/80 uppercase font-mono",children:[c.jsx("span",{className:"w-1.5 h-1.5 rounded-full bg-[#DFB15B] animate-ping"}),"ИНТЕРАКТИВНЫЙ РЕНДЕР СТУДИИ AP"]}),v.demo.type==="day-night"&&c.jsxs("div",{className:"space-y-6",id:"demo-day-night",children:[c.jsxs("div",{className:"relative aspect-[4/3] bg-neutral-900 border border-neutral-800 overflow-hidden group",children:[c.jsx("img",{src:v.bgImage,alt:"Current state render",referrerPolicy:"no-referrer",className:"w-full h-full object-cover transition-all duration-1000 ease-out",style:{filter:V==="day"?"brightness(1.0) contrast(1.05) saturate(1.0)":V==="sunset"?"brightness(0.8) hue-rotate(-10deg) saturate(1.2) contrast(1.05)":"brightness(0.4) contrast(1.2) saturate(0.85) hue-rotate(220deg)"}}),c.jsxs("div",{className:"absolute inset-0 border border-white/5 pointer-events-none grid grid-cols-3 grid-rows-3",children:[c.jsx("div",{className:"border border-white/5"}),c.jsx("div",{className:"border border-white/5"}),c.jsx("div",{className:"border border-white/5"}),c.jsx("div",{className:"border border-white/5"}),c.jsx("div",{className:"border border-white/5"}),c.jsx("div",{className:"border border-white/5"}),c.jsx("div",{className:"border border-white/5"}),c.jsx("div",{className:"border border-white/5"}),c.jsx("div",{className:"border border-white/5"})]}),V==="sunset"&&c.jsx("div",{className:"absolute inset-0 bg-orange-500/10 mix-blend-color-burn pointer-events-none transition-all duration-1000"}),V==="night"&&c.jsx("div",{className:"absolute inset-0 bg-blue-950/35 mix-blend-overlay pointer-events-none transition-all duration-1000"}),c.jsxs("div",{className:"absolute bottom-3 left-3 bg-black/80 px-2 py-1 border border-neutral-800 text-[8px] font-mono text-gray-400 tracking-wider",children:["TIME COORD: ",V==="day"?"12:00 PM":V==="sunset"?"07:30 PM (DUSK)":"01:00 AM (MIDNIGHT)"]})]}),c.jsxs("div",{className:"space-y-3",children:[c.jsx("div",{className:"text-xs text-gray-400 font-mono tracking-wider text-center uppercase",children:"Выберите режим освещения купола неба:"}),c.jsxs("div",{className:"grid grid-cols-3 gap-3",children:[c.jsxs("button",{onClick:()=>T("day"),className:`flex items-center justify-center gap-2 py-2 px-3 text-xs tracking-wider transition-all duration-300 border ${V==="day"?"bg-[#DFB15B] text-black border-[#DFB15B]":"bg-transparent text-gray-400 border-neutral-800 hover:border-neutral-700"}`,children:[c.jsx(nh,{className:"w-3.5 h-3.5"})," Дневной"]}),c.jsxs("button",{onClick:()=>T("sunset"),className:`flex items-center justify-center gap-2 py-2 px-3 text-xs tracking-wider transition-all duration-300 border ${V==="sunset"?"bg-orange-600 text-white border-orange-600":"bg-transparent text-gray-400 border-neutral-800 hover:border-neutral-700"}`,children:[c.jsx(ih,{className:"w-3.5 h-3.5"})," Закат"]}),c.jsxs("button",{onClick:()=>T("night"),className:`flex items-center justify-center gap-2 py-2 px-3 text-xs tracking-wider transition-all duration-300 border ${V==="night"?"bg-indigo-950 text-white border-indigo-950 shadow-[0_0_15px_rgba(30,41,59,0.5)]":"bg-transparent text-gray-400 border-neutral-800 hover:border-neutral-700"}`,children:[c.jsx(Im,{className:"w-3.5 h-3.5"})," Ночной"]})]})]})]}),v.demo.type==="materials"&&c.jsxs("div",{className:"space-y-6",id:"demo-materials",children:[c.jsxs("div",{className:"relative aspect-[4/3] bg-neutral-900 border border-neutral-800 overflow-hidden",children:[c.jsx("img",{src:v.bgImage,alt:"Current material render",referrerPolicy:"no-referrer",className:"w-full h-full object-cover transition-all duration-700",style:{filter:p==="Carrara Marble"?"contrast(1.1) brightness(1.05) grayscale(0.2)":p==="Brushed Brass"?"hue-rotate(-15deg) sepia(0.4) saturate(1.4) brightness(0.95)":p==="Walnut Wood"?"sepia(0.8) hue-rotate(-20deg) brightness(0.7) contrast(1.15)":"hue-rotate(65deg) saturate(1.8) brightness(0.6) contrast(1.1)"}}),c.jsxs("div",{className:"absolute inset-x-0 bottom-0 bg-black/90 p-3 border-t border-neutral-800",children:[c.jsxs("p",{className:"text-[10px] text-[#DFB15B] font-mono uppercase tracking-widest mb-1",children:["АКТИВНЫЙ МАТЕРИАЛ: ",p]}),c.jsx("p",{className:"text-[9px] text-gray-400 leading-normal",children:(ce=ie.find(Y=>Y.name===p))==null?void 0:ce.info})]})]}),c.jsxs("div",{className:"space-y-3",children:[c.jsx("div",{className:"text-xs text-gray-400 font-mono tracking-wider uppercase text-center",children:"Интерактивный конфигуратор материалов отделки:"}),c.jsx("div",{className:"grid grid-cols-2 gap-2",children:ie.map(Y=>c.jsxs("button",{onClick:()=>Z(Y.name),className:`flex items-center gap-2.5 px-3 py-2 text-left text-xs tracking-wider border rounded-none transition-all duration-300 ${p===Y.name?"border-[#DFB15B] bg-[#DFB15B]/10 text-[#DFB15B]":"border-neutral-800 text-gray-400 hover:border-neutral-700"}`,children:[c.jsx("span",{className:`w-3.5 h-3.5 rounded-full ${Y.colorClass} border border-black/30 flex-shrink-0
